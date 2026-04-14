@@ -10,7 +10,6 @@ class MusicPlayer:
         self.root = root
         self.root.title("Audacity de la Salada")
         self.root.geometry("700x900")
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing) 
         self.frame = ttk.Frame(self.root)
         self.frame.grid(sticky=NSEW)
         self.style = ttk.Style()
@@ -37,26 +36,42 @@ class MusicPlayer:
         self.image_label.grid(row=0, column=1, columnspan=3, sticky=NSEW, padx=5, pady=5)
         self.update_cover("default_cover.jpg")
 
-        self.folder = filedialog.askdirectory(title="Select Folder")
+        with open('data.jsonl', 'w') as datafile:
+            datafile.write('')
+        
+        try:
+            self.folder = filedialog.askdirectory(title="Select Folder")
+        except Exception as e:
+            messagebox.showerror("Error", e)
+            self.root.destroy
+
         self.lenfolder = 0
+        self.memorydata = []
 
         for i in os.listdir(self.folder):
-            file = Path(os.path.join(self.folder, i)).resolve()
-            if os.path.isfile(file):
+            try:
+                mixer.Sound(file)
+            except Exception:
                 try:
-                    mixer.Sound(file)
-                except Exception:
-                    try:
-                        with Image.open(file) as img:
-                            img.verify()
-                        self.update_cover(file)
-                    except (IOError, SyntaxError):
-                        continue
-                else:
-                    metadata = TinyTag.get(file)
-                    with open('data.jsonl', 'a') as datafile:
-                        datafile.write(json.dumps(metadata.as_dict()) + '\n')
-                        self.lenfolder += 1
+                    with Image.open(file) as img:
+                        img.verify()
+                    self.update_cover(file)
+                except (IOError, SyntaxError):
+                    continue
+            else:
+                metadata = TinyTag.get(file)
+                metadata = {
+                        "filename": metadata.filename
+                        "title": metadata.title,
+                        "artist" : metadata.artist,
+                        "album" : metadata.album
+                        }
+                with open('data.jsonl', 'a') as datafile:
+                    datafile.write(json.dumps(metadata) + '\n')
+                self.lenfolder += 1
+                if self.lenfolder < 6:
+                    self.memorydata.append(metadata)
+                    
         self.index = 0
 
         with open('data.jsonl', 'r') as datafile:
@@ -64,13 +79,13 @@ class MusicPlayer:
 
         self.set_song_variables()
         self.ismusicpaused = False
-        self.play()
+        self.strict_play()
 
     def set_song_variables(self):
         self.currentsongfile = self.currentsongdata["filename"]
-        self.currentsongname = self.currentsongdata["title"][0]
-        self.currentsongartist = self.currentsongdata["artist"][0]
-        self.currentsongalbum = self.currentsongdata["album"][0]
+        self.currentsongname = self.currentsongdata["title"] if type(self.currentsongdata["title"]) is str else self.currentsongdata["title"][0]
+        self.currentsongartist = self.currentsongdata["artist"] if type(self.currentsongdata["artist"]) is str else self.currentsongdata["artist"][0]
+        self.currentsongalbum = self.currentsongdata["album"] if type(self.currentsongdata["album"]) is str else self.currentsongdata["album"][0]
         
     def update_cover(self, path):
         try:
@@ -82,21 +97,18 @@ class MusicPlayer:
         except Exception as e:
             print(f"Could not load image: {e}")
     
-    def on_closing(self):
-        try:
-            os.remove("data.jsonl")
-        except Exception:
-            pass
-        self.root.destroy()
 
     def play(self):
         if self.ismusicpaused:
             mixer.music.unpause()
             self.ismusicpaused = False
         else:
-            mixer.music.unload()
-            mixer.music.load(self.currentsongfile)
-            mixer.music.play()
+            strict_play()
+
+    def strict_play(self):
+        mixer.music.unload()
+        mixer.music.load(self.currentsongfile)
+        mixer.music.play()
 
     def pause(self):
         mixer.music.pause()
@@ -106,14 +118,15 @@ class MusicPlayer:
         self.index += 1
         if self.index > self.lenfolder:
             self.index = 0
+        self.currentsongfile = self.memorydata[3]
+        self.set_song_variables()
+        self.strict_play()
+                    
         with open('data.jsonl', 'r') as datafile:
             for index, value in enumerate(datafile):
-                if index == self.index:
-                    self.currentsongdata = json.loads(value)
-                    self.set_song_variables()
-                    mixer.music.unload()
-                    mixer.music.load(self.currentsongfile)
-                    mixer.music.play()
+                if index == self.index + 2:
+                    self.memorydata.insert(-1, json.loads(value))
+                    self.memorydata.pop(0)
                     break
 
 
@@ -121,14 +134,15 @@ class MusicPlayer:
         self.index -= 1
         if self.index < 0:
             self.index = self.lenfolder
+        self.currentsongfile = self.memorydata[1]
+        self.set_song_variables()
+        self.strict_play()
+
         with open('data.jsonl', 'r') as datafile:
             for index, value in enumerate(datafile):
-                if index == self.index:
-                    self.currentsongdata = json.loads(value)
-                    self.set_song_variables()
-                    mixer.music.unload()
-                    mixer.music.load(self.currentsongfile)
-                    mixer.music.play()
+                if index == self.index - 2:
+                    self.memorydata.insert(0, json.loads(value))
+                    self.memorydata.pop()
                     break
     
     def stop(self):
