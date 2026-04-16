@@ -49,9 +49,16 @@ class MusicPlayer:
         self.artist_label = Label(self.info_frame, text="Artist", 
                                   font=("Helvetica", 11), 
                                   fg="#b3b3b3", bg="DodgerBlue4", anchor="w")
-        self.artist_label.grid(row=1, column=0, sticky="ew", pady=(2, 15))
+        self.artist_label.grid(row=1, column=0, sticky="ew", pady=(2, 4))
 
-        self.progress = ttk.Progressbar(self.root, orient=HORIZONTAL, length=400, mode='determinate')
+        #self.album_label = Label(self.info_frame, text="Album", 
+         #                         font=("Helvetica", 11), 
+          #                        fg="#b3b3b3", bg="DodgerBlue4", anchor="w")
+        #self.album_label.grid(row=2, column=0, sticky="ew", pady=(2, 4))
+
+
+        self.progressvar = DoubleVar()
+        self.progress = ttk.Progressbar(self.root, variable=self.progressvar, orient=HORIZONTAL, length=400, mode='determinate')
         self.progress.grid(row=2, column=0, padx=30, pady=10, sticky="ew")
 
         self.controls_frame = Frame(self.root, bg="DodgerBlue4")
@@ -72,13 +79,14 @@ class MusicPlayer:
 
         otherbtnconfig = [
             ("Create", self.make_playlist, 0),
-            ("Add" , self.add_to_playlist, 3)
+            ("Search", self.search, 2),
+            ("Add" , self.add_to_playlist, 4)
         ]
 
         for icon, cmd, col in otherbtnconfig:
             btn = ttk.Button(self.controls_frame, text=icon,
                              command=cmd, style="Player.TButton", width=8)
-            btn.grid(row=1, column=col, columnspan=2, padx=8, pady=8)
+            btn.grid(row=1, column=col, columnspan=1, padx=8, pady=8)
 
         self.volumebar = ttk.Scale(self.controls_frame, from_=0, to=100, orient=HORIZONTAL, style="Custom.Horizontal.TScale", command=self.volume_changed)
         self.volumebar.grid(row=2, column=0, columnspan=5, sticky=EW, padx=8, pady=8)
@@ -99,14 +107,18 @@ class MusicPlayer:
         self.myplaylists = os.path.join(Path.home(), "My Playlists")
 
         self.get_folder()
+        self.update_progress_bar()
 
     def set_song_variables(self):
         self.currentsongfile = self.currentsongdata["filename"]
         self.currentsongname = self.currentsongdata["title"] if type(self.currentsongdata["title"]) is str else self.currentsongdata["title"][0]
         self.currentsongartist = self.currentsongdata["artist"] if type(self.currentsongdata["artist"]) is str else self.currentsongdata["artist"][0]
         self.currentsongalbum = self.currentsongdata["album"] if type(self.currentsongdata["album"]) is str else self.currentsongdata["album"][0]
+        self.currentsonglength = self.currentsongdata["length"]
         self.title_label.config(text=self.currentsongname)
-        self.artist_label.config(text=self.currentsongartist)
+        self.artist_label.config(text=f"{self.currentsongartist} - {self.currentsongalbum}")
+        #self.album_label.config(text=self.currentsongalbum)
+        self.progress["maximum"] = self.currentsonglength
         try:
             tag = TinyTag.get(self.currentsongfile, image=True)
             image_data = tag.images.any
@@ -156,7 +168,9 @@ class MusicPlayer:
                         "filename": fullpath, 
                         "title": metadata.title if metadata.title else file,
                         "artist" : metadata.artist if metadata.artist else "Unknown Artist",
-                        "album" : metadata.album if metadata.album else "Unknown Album"
+                        "album" : metadata.album if metadata.album else "Unknown Album",
+                        "length" : metadata.duration,
+                        "genre" : metadata.genre if metadata.genre else "Unknown Genre"
                         }
                 
                 with open('data.jsonl', 'a') as datafile:
@@ -211,7 +225,9 @@ class MusicPlayer:
                         "filename": fullpath, 
                         "title": metadata.title if metadata.title else file,
                         "artist" : metadata.artist if metadata.artist else "Unknown Artist",
-                        "album" : metadata.album if metadata.album else "Unknown Album"
+                        "album" : metadata.album if metadata.album else "Unknown Album",
+                        "length" : metadata.duration,
+                        "genre" : metadata.genre if metadata.genre else "Unknown Genre"
                         }
                 
                 with open('data.jsonl', 'a') as datafile:
@@ -222,6 +238,61 @@ class MusicPlayer:
             except Exception:
                 print(e)
                 continue
+
+    def search(self):
+        userinput = simpledialog.askstring("Search", "Enter search input:")
+
+        searchresultswindow = None
+        columns = None
+        tree = None
+
+        with open("data.jsonl", "r") as datafile:
+            for index, value in enumerate(datafile):
+                songdata = json.loads(value)
+                if userinput in songdata.values():
+                    if not searchresultswindow:
+                        searchresultswindow = Toplevel(self.root)
+                        searchresultswindow.title("Search Results")
+                        searchresultswindow.geometry("416x750")
+                        searchresultswindow.columnconfigure(0, weight=0)
+                        searchresultswindow.columnconfigure(1, weight=1)
+                        columns = ('title', 'album', 'artist', 'genre')
+                        tree = ttk.Treeview(searchresultswindow, columns=columns, show='headings', selectmode="browse")
+                        tree.grid(row=0, column=0, sticky=NSEW, padx=5, pady=5) 
+                        for i in columns:
+                            tree.heading(i, text=i) 
+                            tree.column(i, width=100)
+                        s = ttk.Scrollbar(searchresultswindow, orient=VERTICAL, command=tree.yview)
+                        s.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5) 
+                        tree.configure(yscrollcommand=s.set)
+                    tree.insert("", "end", iid=index, values=(songdata["title"], songdata["album"], songdata["artist"], songdata["genre"]))
+                else:
+                    continue
+            if not searchresultswindow:
+                messagebox.showerror("Error", "No matches. Input is case sensitive.")
+
+            tree.bind('<<TreeviewSelect>>', lambda x: self.on_tree_select(x, tree))
+
+    def on_tree_select(self, event, tree):
+        newindex = tree.selection()[0]
+        print(newindex)
+        if not newindex:
+            return
+        else:
+            self.index = int(newindex)
+
+        with open('data.jsonl', 'r') as datafile:
+            for index, value in enumerate(datafile):
+                if index == self.index:
+                    self.currentsongdata = json.loads(value)
+                    break
+        
+        self.set_song_variables()
+        self.strict_play()
+
+    def update_progress_bar(self):
+        self.progressvar.set(mixer.music.get_pos()/1000)
+        self.root.after(1000, self.update_progress_bar)
 
     def volume_changed(self, value):
         mixer.music.set_volume(float(value)/100)
@@ -276,6 +347,10 @@ class MusicPlayer:
         self.photo = ImageTk.PhotoImage(img)
         self.image_label.config(image=self.photo)
         self.get_folder()
+    
+    def loop(self):
+        pass
+
        
 if __name__ == "__main__":
     root = Tk()
