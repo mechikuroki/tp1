@@ -82,8 +82,11 @@ class MusicPlayer:
 
         self.volumebar = ttk.Scale(self.controls_frame, from_=0, to=100, orient=HORIZONTAL, style="Custom.Horizontal.TScale", command=self.volume_changed)
         self.volumebar.grid(row=2, column=0, columnspan=5, sticky=EW, padx=8, pady=8)
-
-        mixer.init()
+        try:
+            mixer.init()
+        except Exception as e:
+            messagebox.showerror("Error", e)
+            self.root.destroy()
         self.volumebar.set(100)
 
         self.audioformattuple = (".wav", ".ogg", ".mp3", ".flac", ".mid", ".midi", ".mod", ".xm", ".it", ".s3m")
@@ -108,7 +111,7 @@ class MusicPlayer:
             tag = TinyTag.get(self.currentsongfile, image=True)
             image_data = tag.images.any
             img = Image.open(io.BytesIO(image_data))
-        
+    
         except Exception as e:
             img = Image.open("default_cover.jpg")
         
@@ -162,7 +165,6 @@ class MusicPlayer:
                 self.lenfolder += 1
                     
             except Exception:
-                print(e)
                 continue
         if self.lenfolder == 0:
             messagebox.showerror("Error", "No acceptable files in folder")
@@ -242,7 +244,7 @@ class MusicPlayer:
 
     def next(self):
         self.index += 1
-        if self.index > self.lenfolder:
+        if self.index > self.lenfolder - 1:
             self.index = 0
                     
         with open('data.jsonl', 'r') as datafile:
@@ -257,7 +259,7 @@ class MusicPlayer:
     def previous(self):
         self.index -= 1
         if self.index < 0:
-            self.index = self.lenfolder
+            self.index = self.lenfolder - 1
 
         with open('data.jsonl', 'r') as datafile:
             for index, value in enumerate(datafile):
