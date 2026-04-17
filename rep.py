@@ -4,13 +4,14 @@ from pathlib import Path
 from pygame import mixer
 from tinytag import TinyTag
 from PIL import Image, ImageTk
-import os, json, io, shutil
+from random import randint
+import os, json, io, shutil 
 #121212
 class MusicPlayer:
     def __init__(self, root):
         self.root = root
         self.root.title("Audacity de la Salada")
-        self.root.geometry("500x750")
+        self.root.geometry("750x750")
         self.root.configure(bg="DodgerBlue4") 
 
         self.root.grid_columnconfigure(0, weight=1)
@@ -65,31 +66,36 @@ class MusicPlayer:
         self.controls_frame.grid(row=3, column=0, pady=(10, 40))
 
         mainbtnconfig = [
-            ("⏮", self.previous, 0),
-            ("⏸", self.play, 1),
-            ("▶", self.pause, 2),
+            ("🔀", self.shuffle, 0),
+            ("⏮", self.previous, 1),
             ("⏭", self.next, 3),
-            ("⏹", self.stop, 4)
-        ]
+            ("🔁", self.loop, 4),
+            ("⏹", self.stop, 5)
+            ]
 
         for icon, cmd, col in mainbtnconfig:
             btn = ttk.Button(self.controls_frame, text=icon, 
-                             command=cmd, style="Player.TButton", width=4)
-            btn.grid(row=0, column=col, padx=8, pady=8)
+                     command=cmd, style="Player.TButton", width=4)
+            btn.grid(row=0, column=col, padx=5, pady=8)
+
+        self.playbtn = ttk.Button(self.controls_frame, text="⏸", command=self.play, style="Player.TButton", width=4)
+        self.playbtn.grid(row=0, column=2, padx=5, pady=8)
 
         otherbtnconfig = [
             ("Create", self.make_playlist, 0),
             ("Search", self.search, 2),
             ("Add" , self.add_to_playlist, 4)
-        ]
+            ]
 
         for icon, cmd, col in otherbtnconfig:
             btn = ttk.Button(self.controls_frame, text=icon,
-                             command=cmd, style="Player.TButton", width=8)
-            btn.grid(row=1, column=col, columnspan=1, padx=8, pady=8)
+                     command=cmd, style="Player.TButton", width=8)
+            btn.grid(row=1, column=col, columnspan=2, padx=5, pady=15)
 
-        self.volumebar = ttk.Scale(self.controls_frame, from_=0, to=100, orient=HORIZONTAL, style="Custom.Horizontal.TScale", command=self.volume_changed)
-        self.volumebar.grid(row=2, column=0, columnspan=5, sticky=EW, padx=8, pady=8)
+        self.volumebar = ttk.Scale(self.controls_frame, from_=0, to=100, orient=HORIZONTAL, 
+                           style="Custom.Horizontal.TScale", command=self.volume_changed)
+        self.volumebar.grid(row=2, column=0, columnspan=6, sticky=EW, padx=20, pady=10)
+
         try:
             mixer.init()
         except Exception as e:
@@ -108,6 +114,8 @@ class MusicPlayer:
 
         self.get_folder()
         self.update_progress_bar()
+        self.ismusiclooped = False
+        self.ismusicshuffled = False
 
     def set_song_variables(self):
         self.currentsongfile = self.currentsongdata["filename"]
@@ -236,7 +244,6 @@ class MusicPlayer:
                 self.lenfolder += 1
                     
             except Exception:
-                print(e)
                 continue
 
     def search(self):
@@ -253,7 +260,7 @@ class MusicPlayer:
                     if not searchresultswindow:
                         searchresultswindow = Toplevel(self.root)
                         searchresultswindow.title("Search Results")
-                        searchresultswindow.geometry("416x750")
+                        searchresultswindow.geometry("450x350")
                         searchresultswindow.columnconfigure(0, weight=0)
                         searchresultswindow.columnconfigure(1, weight=1)
                         columns = ('title', 'album', 'artist', 'genre')
@@ -275,7 +282,6 @@ class MusicPlayer:
 
     def on_tree_select(self, event, tree):
         newindex = tree.selection()[0]
-        print(newindex)
         if not newindex:
             return
         else:
@@ -292,31 +298,41 @@ class MusicPlayer:
 
     def update_progress_bar(self):
         self.progressvar.set(mixer.music.get_pos()/1000)
+        if not mixer.music.get_busy() and not self.ismusicpaused:
+            if self.ismusiclooped:
+                self.strict_play()
+            else:
+                self.next()
         self.root.after(1000, self.update_progress_bar)
 
     def volume_changed(self, value):
         mixer.music.set_volume(float(value)/100)
 
     def play(self):
-        if self.ismusicpaused:
-            mixer.music.unpause()
-            self.ismusicpaused = False
+        if self.playbtn['text'] == "▶":
+            if self.ismusicpaused:
+                mixer.music.unpause()
+                self.ismusicpaused = False
+            else:
+                self.strict_play()
+            self.playbtn.config(text="⏸")
         else:
-            self.strict_play()
+            mixer.music.pause()
+            self.ismusicpaused = True
+            self.playbtn.config(text="▶")
 
     def strict_play(self):
         mixer.music.unload()
         mixer.music.load(self.currentsongfile)
         mixer.music.play()
 
-    def pause(self):
-        mixer.music.pause()
-        self.ismusicpaused = True
-
     def next(self):
-        self.index += 1
-        if self.index > self.lenfolder - 1:
-            self.index = 0
+        if self.ismusicshuffled:
+            self.index = randint(0, self.lenfolder - 1)
+        else:
+            self.index += 1
+            if self.index > self.lenfolder - 1:
+                self.index = 0
                     
         with open('data.jsonl', 'r') as datafile:
             for index, value in enumerate(datafile):
@@ -328,9 +344,12 @@ class MusicPlayer:
         self.strict_play()
 
     def previous(self):
-        self.index -= 1
-        if self.index < 0:
-            self.index = self.lenfolder - 1
+        if self.ismusicshuffled:
+            self.index = randint(0, self.lenfolder - 1)
+        else:
+            self.index -= 1
+            if self.index < 0:
+                self.index = self.lenfolder - 1
 
         with open('data.jsonl', 'r') as datafile:
             for index, value in enumerate(datafile):
@@ -349,9 +368,11 @@ class MusicPlayer:
         self.get_folder()
     
     def loop(self):
-        pass
+        self.ismusiclooped = not self.ismusiclooped
 
-       
+    def shuffle(self):
+        self.ismusicshuffled = not self.ismusicshuffled
+
 if __name__ == "__main__":
     root = Tk()
     app = MusicPlayer(root)
