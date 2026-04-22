@@ -9,6 +9,7 @@ import os, json, io, shutil
 #121212
 class MusicPlayer:
     def __init__(self, root):
+        #configuración de la root
         self.root = root
         self.root.title("Audacity de la Salada")
         self.root.geometry("750x750")
@@ -20,9 +21,9 @@ class MusicPlayer:
         self.root.grid_rowconfigure(2, weight=0) 
         self.root.grid_rowconfigure(3, weight=0)
 
+       #configuración de los botones/estilos/labels donde van 
         self.style = ttk.Style()
         self.style.theme_use("clam")
-        
         self.style.configure("Player.TButton", 
                              font=("Helvetica", 14), 
                              padding=5, 
@@ -30,6 +31,15 @@ class MusicPlayer:
                              foreground="white",
                              borderwidth=0)
         self.style.map("Player.TButton", background=[('active', 'lightblue')])
+
+        self.style.configure("Playerspecial.TButton", 
+                             font=("Helvetica", 14), 
+                             padding=5, 
+                             background="lightblue", 
+                             foreground="white",
+                             borderwidth=0)
+        self.style.map("Playerspecial.TButton", background=[('active', '#282828')])
+
 
         self.style.configure("Custom.Horizontal.TScale",
                 troughcolor="lightblue",   
@@ -52,11 +62,6 @@ class MusicPlayer:
                                   fg="#b3b3b3", bg="DodgerBlue4", anchor="w")
         self.artist_label.grid(row=1, column=0, sticky="ew", pady=(2, 4))
 
-        #self.album_label = Label(self.info_frame, text="Album", 
-         #                         font=("Helvetica", 11), 
-          #                        fg="#b3b3b3", bg="DodgerBlue4", anchor="w")
-        #self.album_label.grid(row=2, column=0, sticky="ew", pady=(2, 4))
-
 
         self.progressvar = DoubleVar()
         self.progress = ttk.Progressbar(self.root, variable=self.progressvar, orient=HORIZONTAL, length=400, mode='determinate')
@@ -66,10 +71,8 @@ class MusicPlayer:
         self.controls_frame.grid(row=3, column=0, pady=(10, 40))
 
         mainbtnconfig = [
-            ("🔀", self.shuffle, 0),
             ("⏮", self.previous, 1),
             ("⏭", self.next, 3),
-            ("🔁", self.loop, 4),
             ("⏹", self.stop, 5)
             ]
 
@@ -78,8 +81,15 @@ class MusicPlayer:
                      command=cmd, style="Player.TButton", width=4)
             btn.grid(row=0, column=col, padx=5, pady=8)
 
+        
         self.playbtn = ttk.Button(self.controls_frame, text="⏸", command=self.play, style="Player.TButton", width=4)
         self.playbtn.grid(row=0, column=2, padx=5, pady=8)
+
+        self.shufflebtn = ttk.Button(self.controls_frame, text="🔀", command=self.shuffle, style="Player.TButton", width=4)
+        self.shufflebtn.grid(row=0, column=0, padx=5, pady=8)
+        
+        self.loopbtn = ttk.Button(self.controls_frame, text="🔁", command=self.loop, style="Player.TButton", width=4)
+        self.loopbtn.grid(row=0, column=4, padx=5, pady=8)
 
         otherbtnconfig = [
             ("Create", self.make_playlist, 0),
@@ -95,28 +105,32 @@ class MusicPlayer:
         self.volumebar = ttk.Scale(self.controls_frame, from_=0, to=100, orient=HORIZONTAL, 
                            style="Custom.Horizontal.TScale", command=self.volume_changed)
         self.volumebar.grid(row=2, column=0, columnspan=6, sticky=EW, padx=20, pady=10)
-
+        #si el init del mixer falla (casi siempre por no tener parlantes conectados) la app se autodestruye
         try:
             mixer.init()
         except Exception as e:
             messagebox.showerror("Error", e)
             self.root.destroy()
         self.volumebar.set(100)
-
+        
+        #la tupla de formatos que acepta el mixer: al final igual solo usé la string
         self.audioformattuple = (".wav", ".ogg", ".mp3", ".flac", ".mid", ".midi", ".mod", ".xm", ".it", ".s3m")
         self.audioformatstring = ""
         for i in self.audioformattuple:
             self.audioformatstring += f" *{i}"
 
+        #crea la carpeta donde van las playlist hechas.
         if Path(os.path.join(Path.home(), "My Playlists")).exists() == False:
             os.mkdir(os.path.join(Path.home(), "My Playlists"))
         self.myplaylists = os.path.join(Path.home(), "My Playlists")
-
+        
+        #inicia el programa
         self.get_folder()
         self.update_progress_bar()
         self.ismusiclooped = False
         self.ismusicshuffled = False
 
+    #setea las variables de la canción que se va a escuchar
     def set_song_variables(self):
         self.currentsongfile = self.currentsongdata["filename"]
         self.currentsongname = self.currentsongdata["title"] if type(self.currentsongdata["title"]) is str else self.currentsongdata["title"][0]
@@ -125,12 +139,11 @@ class MusicPlayer:
         self.currentsonglength = self.currentsongdata["length"]
         self.title_label.config(text=self.currentsongname)
         self.artist_label.config(text=f"{self.currentsongartist} - {self.currentsongalbum}")
-        #self.album_label.config(text=self.currentsongalbum)
         self.progress["maximum"] = self.currentsonglength
         try:
             tag = TinyTag.get(self.currentsongfile, image=True)
             image_data = tag.images.any
-            img = Image.open(io.BytesIO(image_data))
+            img = Image.open(io.BytesIO(image_data.data))
     
         except Exception as e:
             img = Image.open("default_cover.jpg")
@@ -140,6 +153,7 @@ class MusicPlayer:
             self.photo = ImageTk.PhotoImage(img)
             self.image_label.config(image=self.photo)
 
+    #esta función es para inicializar que se empieze a escuchar una canción de una x carpeta
     def get_folder(self, folder=None):
         with open('data.jsonl', 'w') as datafile:
             datafile.write('')
@@ -204,7 +218,7 @@ class MusicPlayer:
         self.ismusicpaused = False
         self.strict_play()
 
- 
+    #para crear playlists 
     def make_playlist(self):
         filepaths = filedialog.askopenfilenames(title="Select multiple files", filetypes=[("Music Files", self.audioformatstring)])
         userinput = simpledialog.askstring("Playlist Title", "Please enter your playlist title:")
@@ -219,12 +233,17 @@ class MusicPlayer:
                 shutil.copy2(Path(file), dst)
             self.get_folder(folder=folder)
 
-    
+   #para agregar a la playlist que se está escuchando: cabe aclarar que cuando se vuelve a elegir la canción queda y en el orden que el sistema le da a la carpeta.
+   #esto es intencional porque no me pareció importante que quede al final y borrarla no tiene sentido.
     def add_to_playlist(self):
         filepaths = filedialog.askopenfilenames(title="Select multiple files", filetypes=[("Music Files", self.audioformatstring)])
         for file in filepaths:
-            fullpath = os.path.join(self.folder, Path(file).name)
-            shutil.copy2(Path(file), fullpath)
+            try:
+                fullpath = os.path.join(self.folder, Path(file).name)
+                shutil.copy2(Path(file), fullpath)
+            except Exception as e:
+                messagebox.showerror("Error", e)
+                return
             try:
                 mixer.music.load(fullpath)
                 mixer.music.unload()
@@ -245,7 +264,7 @@ class MusicPlayer:
                     
             except Exception:
                 continue
-
+    #búsqueda. al input del usuario se lo busca entre todos los datos tipo string y se los pone en un treeview para que elija el que le parezca.
     def search(self):
         userinput = simpledialog.askstring("Search", "Enter search input:")
 
@@ -256,7 +275,7 @@ class MusicPlayer:
         with open("data.jsonl", "r") as datafile:
             for index, value in enumerate(datafile):
                 songdata = json.loads(value)
-                if userinput in songdata.values():
+                if any(userinput.lower() in i.lower() for i in songdata.values() if isinstance(i, str)):
                     if not searchresultswindow:
                         searchresultswindow = Toplevel(self.root)
                         searchresultswindow.title("Search Results")
@@ -276,10 +295,11 @@ class MusicPlayer:
                 else:
                     continue
             if not searchresultswindow:
-                messagebox.showerror("Error", "No matches. Input is case sensitive.")
+                messagebox.showerror("Error", "No matches.")
 
             tree.bind('<<TreeviewSelect>>', lambda x: self.on_tree_select(x, tree))
-
+    
+    #es simplemente la función para que la canción elegida en el treeview empiece.
     def on_tree_select(self, event, tree):
         newindex = tree.selection()[0]
         if not newindex:
@@ -296,17 +316,22 @@ class MusicPlayer:
         self.set_song_variables()
         self.strict_play()
 
+    #este es el loop infinito que actualiza la barrita de progreso y que no termine la canción.
+    #se ejecuta una vez por segundo porque me pareció excesivo que se repita más
     def update_progress_bar(self):
         self.progressvar.set(mixer.music.get_pos()/1000)
         if not mixer.music.get_busy() and not self.ismusicpaused:
-            if self.ismusiclooped:
-                self.strict_play()
-            else:
-                self.next()
+            self.next()
+
         self.root.after(1000, self.update_progress_bar)
 
+    #cambia volumen
     def volume_changed(self, value):
         mixer.music.set_volume(float(value)/100)
+
+    
+    #el resto de los botones son empezar/pausar, sólo empezar, siguiente, anterior, parar, repetir y aleatorio
+
 
     def play(self):
         if self.playbtn['text'] == "▶":
@@ -327,7 +352,10 @@ class MusicPlayer:
         mixer.music.play()
 
     def next(self):
-        if self.ismusicshuffled:
+        if self.ismusiclooped:
+            self.strict_play()
+            return
+        elif self.ismusicshuffled:
             self.index = randint(0, self.lenfolder - 1)
         else:
             self.index += 1
@@ -344,7 +372,10 @@ class MusicPlayer:
         self.strict_play()
 
     def previous(self):
-        if self.ismusicshuffled:
+        if self.ismusiclooped:
+            self.strict_play()
+            return
+        elif self.ismusicshuffled:
             self.index = randint(0, self.lenfolder - 1)
         else:
             self.index -= 1
@@ -369,10 +400,21 @@ class MusicPlayer:
     
     def loop(self):
         self.ismusiclooped = not self.ismusiclooped
+        if self.loopbtn["style"] == "Player.TButton":
+            self.loopbtn.config(style="Playerspecial.TButton")
+        else:
+            self.loopbtn.config(style="Player.TButton")
 
     def shuffle(self):
         self.ismusicshuffled = not self.ismusicshuffled
+        if self.shufflebtn["style"] == "Player.TButton":
+            self.shufflebtn.config(style="Playerspecial.TButton")
+        else:
+            self.shufflebtn.config(style="Player.TButton")
 
+
+
+ #si no está siendo ejecutada como módulo que empiece la aplicación
 if __name__ == "__main__":
     root = Tk()
     app = MusicPlayer(root)
